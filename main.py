@@ -9,7 +9,7 @@ def model2formula(model):
 
 # Пример: решение теоремы Ферма (теория NIA)
 def ferma_theorem(easy=True):  # NIA
-    x, y, z = Ints('x y z')
+    x, y, z = Ints("x y z")
     s = Solver()
     for v in [x, y, z]:
         s.add(v > 0)
@@ -18,7 +18,7 @@ def ferma_theorem(easy=True):  # NIA
         s.add(y < z)
         s.add(x * x + y * y == z * z)
     else:
-        s.add(x * x * x + y * y * y == z * z * z) # should be unsat, but diverges
+        s.add(x * x * x + y * y * y == z * z * z)  # should be unsat, but diverges
     print(s.to_smt2())
     while s.check() == sat:
         model = s.model()
@@ -30,7 +30,7 @@ INT_SIZE = 32
 
 
 def abs_ex():  # BV
-    x, y = BitVecs('x y', INT_SIZE)
+    x, y = BitVecs("x y", INT_SIZE)
     s = Solver()
     s.add(y == If(x >= 0, x, -x))
     s.add(Not(y >= 0))
@@ -41,7 +41,7 @@ def abs_ex():  # BV
 # Пример: факторизация чисел (теория BV)
 def factor(out, nia=False, long=False):  # BV
     long = not nia and long
-    x, y, n = Ints('x y n') if nia else BitVecs('x y n', INT_SIZE)
+    x, y, n = Ints("x y n") if nia else BitVecs("x y n", INT_SIZE)
     s = Solver()
     s.add(n == out)
     if long:
@@ -61,7 +61,7 @@ def factor(out, nia=False, long=False):  # BV
     xv = model[x]
     yv = model[y]
     xy = xv.as_long() * yv.as_long()
-    print(f"{xv} * {yv} = {xy}", end='')
+    print(f"{xv} * {yv} = {xy}", end="")
     if not nia:
         print(f" ?= {xy % (1 << INT_SIZE)}")
     else:
@@ -70,14 +70,15 @@ def factor(out, nia=False, long=False):  # BV
 
 def is_power_of_two():
     def attempt(SIZE: int):
-        """
-        TODO: 1 point
-        Докажите при помощи SMT-решателя, что `(x != 0) && (x & (x - 1)) == 0` - это код, возвращающий истинное значение
-        тогда и только тогда, когда битвектор x является степенью двойки.
-        :param SIZE: width of the bit vector `x`
-        :returns вердикт решателя (результат `check()`) на запросе, невыполнимость которого доказывает утверждение
-        """
-        return
+        x = BitVec("x", SIZE)
+        s = Solver()
+        s.add(Or([x == (1 << i) for i in range(SIZE)]))
+        s.add(Not(And(x != 0, (x & (x - 1)) == 0)))
+
+        # print(s.to_smt2())
+        # print(s)
+        return s.check()
+
     for i in range(1, 20):
         assert attempt(i) == unsat, f"утверждение не доказано для SIZE = {i}"
 
@@ -85,7 +86,11 @@ def is_power_of_two():
 def bithack():
     def is_identity(a: int, b: int, BIT_WIDTH: int) -> bool:
         mask = (1 << BIT_WIDTH) - 1
-        return all((((x + a) ^ b) - a) & mask == (((x - a) ^ b) + a) & mask for x in range(1 << BIT_WIDTH))
+        return all(
+            (((x + a) ^ b) - a) & mask == (((x - a) ^ b) + a) & mask
+            for x in range(1 << BIT_WIDTH)
+        )
+
     def attempt(BIT_WIDTH: int) -> Set[Tuple[int, int]]:
         """
         TODO: 1 point
@@ -95,24 +100,110 @@ def bithack():
         :param BIT_WIDTH: width of bit vectors a, b, x
         :return set of pairs of `a` and `b`
         """
-        return {(3, 3)}
+
+        x, a, b = BitVecs("x a b", BIT_WIDTH)
+        s = Solver()
+        p1 = ((x + a) ^ b) - a
+        p2 = ((x - a) ^ b) + a
+        s.add(ForAll([x], p1 == p2))
+        sett = set()
+        while s.check() == sat:
+            model = s.model()
+            sett.add((model[a].as_long(), model[b].as_long()))
+            s.add(Not(model2formula(model)))
+
+        return sett
+
     results = {width: attempt(width) for width in range(2, 6)}
     for width, pairs in results.items():
         for a, b in pairs:
-            assert 0 <= a < 1 << width and 0 <= b < 1 << width, f"({a}, {b}) does not fit into {width} bits"
-            assert is_identity(a, b, width), f"not an identity for a = {a}, b = {b}, BIT_WIDTH = {width}"
-    assert results[2] == {(3, 3), (0, 0), (1, 1), (2, 0), (2, 2), (2, 3), (0, 3), (0, 1), (0, 2), (1, 0), (3, 0), (3, 1), (2, 1), (1, 2), (1, 3), (3, 2)}
-    assert results[3] == {(4, 0), (3, 4), (4, 3), (3, 1), (5, 4), (4, 6), (5, 1), (0, 2), (0, 5), (2, 2), (1, 0), (2, 5), (7, 4), (6, 2), (7, 1), (6, 5), (4, 2), (3, 0), (4, 5), (5, 0), (0, 1), (0, 7), (2, 4), (0, 4), (2, 1), (2, 7), (1, 5), (6, 1), (7, 0), (6, 4), (6, 7), (4, 1), (4, 7), (3, 5), (4, 4), (5, 5), (0, 0), (1, 1), (0, 3), (2, 0), (1, 4), (0, 6), (2, 3), (2, 6), (6, 0), (6, 6), (7, 5), (6, 3)}
+            assert 0 <= a < 1 << width and 0 <= b < 1 << width, (
+                f"({a}, {b}) does not fit into {width} bits"
+            )
+            assert is_identity(a, b, width), (
+                f"not an identity for a = {a}, b = {b}, BIT_WIDTH = {width}"
+            )
+    assert results[2] == {
+        (3, 3),
+        (0, 0),
+        (1, 1),
+        (2, 0),
+        (2, 2),
+        (2, 3),
+        (0, 3),
+        (0, 1),
+        (0, 2),
+        (1, 0),
+        (3, 0),
+        (3, 1),
+        (2, 1),
+        (1, 2),
+        (1, 3),
+        (3, 2),
+    }
+    assert results[3] == {
+        (4, 0),
+        (3, 4),
+        (4, 3),
+        (3, 1),
+        (5, 4),
+        (4, 6),
+        (5, 1),
+        (0, 2),
+        (0, 5),
+        (2, 2),
+        (1, 0),
+        (2, 5),
+        (7, 4),
+        (6, 2),
+        (7, 1),
+        (6, 5),
+        (4, 2),
+        (3, 0),
+        (4, 5),
+        (5, 0),
+        (0, 1),
+        (0, 7),
+        (2, 4),
+        (0, 4),
+        (2, 1),
+        (2, 7),
+        (1, 5),
+        (6, 1),
+        (7, 0),
+        (6, 4),
+        (6, 7),
+        (4, 1),
+        (4, 7),
+        (3, 5),
+        (4, 4),
+        (5, 5),
+        (0, 0),
+        (1, 1),
+        (0, 3),
+        (2, 0),
+        (1, 4),
+        (0, 6),
+        (2, 3),
+        (2, 6),
+        (6, 0),
+        (6, 6),
+        (7, 5),
+        (6, 3),
+    }
     assert len(results[4]) == 128
     assert len(results[5]) == 320
 
 
 def queens():
     def is_ok(size, xs):
-        return (len(xs) == size
-                and set(xs) == set(range(1, size + 1))
-                and len({x - i for i, x in enumerate(xs)}) == size
-                and len({x + i for i, x in enumerate(xs)}) == size)
+        return (
+            len(xs) == size
+            and set(xs) == set(range(1, size + 1))
+            and len({x - i for i, x in enumerate(xs)}) == size
+            and len({x + i for i, x in enumerate(xs)}) == size
+        )
+
     def attempt(SIZE: int) -> List[int]:
         """
         TODO: 3 points
@@ -126,17 +217,32 @@ def queens():
             если по индексу i расположено число j в списке, тогда в строке i+1 и в столбце j стоит ферзь
             Пример: [4, 2, 8, 6, 1, 3, 5, 7]
         """
-        solver = SolverFor("QF_LIA")
-        return [4, 2, 8, 6, 1, 3, 5, 7]
+
+        s = SolverFor("QF_LIA")
+        queens = [Int(f"x{i}") for i in range(SIZE)]
+        for q in queens:
+            s.add(q >= 1, q <= SIZE)
+        for i in range(SIZE):
+            for j in range(i + 1, SIZE):
+                s.add(queens[i] != queens[j])
+                s.add(i - j != queens[i] - queens[j])
+                s.add(abs(j - i) != Abs(queens[i] - queens[j]))
+
+        # print(s.check())
+        s.check()
+        model = s.model()
+
+        return [model[x].as_long() for x in queens]
+
     for s in range(8, 40):
         xs = attempt(s)
-        print(xs)
+        # print(xs)
         assert is_ok(s, xs), f"{xs} - некорректная расстановка {s} ферзей"
 
 
 # Пример: проверка сортированности массива (теория A)
 def sortedness():
-    array_sort =  ArraySort(IntSort(), IntSort())
+    array_sort = ArraySort(IntSort(), IntSort())
     sorted = RecFunction("sorted", array_sort, BoolSort())
     arr = Const("arr", array_sort)
     i, j = Ints("i j")
@@ -154,7 +260,7 @@ def sortedness():
         sorted(a),
         y <= z,
         a[x] == a[z],
-        a[x] != a[y]
+        a[x] != a[y],
     ]
     solver.add(query)
     solver.push()
@@ -181,12 +287,20 @@ def array_theory_proof():
     Эти проверки уже закодированы для вас в функции check, вам нужно только придумать и записать литералы F и Fs.
     Замечание: это упражнение фактически показывает, что теория массивов невыпукла
     """
+
     def is_literal(f):
         def has_formula_inside(t):
             return any(is_bool(c) or has_formula_inside(c) for c in t.children())
+
         if is_not(f):
             f = f.arg(0)
-        return is_bool(f) and is_app(f) and not has_formula_inside(f) and not (is_distinct(f) and f.num_args() > 2)
+        return (
+            is_bool(f)
+            and is_app(f)
+            and not has_formula_inside(f)
+            and not (is_distinct(f) and f.num_args() > 2)
+        )
+
     def check(F, Fs):
         assert len(Fs) >= 2
         for lit in [F, *Fs]:
@@ -201,8 +315,11 @@ def array_theory_proof():
             solver.add(Not(Implies(F, Fi)))
             assert solver.check() == sat
             solver.pop()
-    F = None
-    Fs = []
+
+    a = Array("a", IntSort(), IntSort())
+    i, j, v = Ints("i j v")
+    F = Select(Store(a, i, v), j) == a[j]
+    Fs = [i != j, v == a[j]]
     check(F, Fs)
 
 
@@ -212,18 +329,19 @@ def subtyping():
         cs = [Const(c, Sort) for c in range(card)]
         x = Const(card, Sort)
         return Exists(cs, ForAll(x, Or([x == c for c in cs])))
-    Type = DeclareSort('Type')
-    subtype = Function('subtype', Type, Type, BoolSort())
-    exception = Const('exception', Type)
-    Object = Const('Object', Type)
 
-    x, y, z, v = Consts('x y z v', Type)
+    Type = DeclareSort("Type")
+    subtype = Function("subtype", Type, Type, BoolSort())
+    exception = Const("exception", Type)
+    Object = Const("Object", Type)
+
+    x, y, z, v = Consts("x y z v", Type)
     axioms = [
         subtype(x, x),
         Implies(And(subtype(x, y), subtype(y, z)), subtype(x, z)),
         Implies(And(subtype(x, y), subtype(y, x)), x == y),
         subtype(x, Object),
-        subtype(exception, x)
+        subtype(exception, x),
     ]
     solver = Solver()
     solver.add([ForAll([x, y, z, v], ax) for ax in axioms])
@@ -257,20 +375,45 @@ def groups():
     Замечание: когда решатель `solver` (см. verdict) вернул unsat, можно посмотреть на произведённое им доказательство: print(solver.proof().sexpr())
     (Для этого в начало решения вставьте `set_param(proof=True)`)
     """
+
     def check(axioms, theorems):
         assert len(axioms) > 0
         assert len(theorems) == 4
+
         def verdict(formulas):
             solver = Solver()
             solver.set("rlimit", 5000000)
             solver.add(formulas)
             return solver.check()
+
         assert verdict(axioms) != unsat, "аксиомы противоречивы"
         for theorem in theorems:
-            assert verdict([Not(theorem)]) != unsat, f"{theorem} верно и без аксиом группы"
-            assert verdict([*axioms, Not(theorem)]) == unsat, f"{theorem} не выведено из аксиом"
-    axioms = []
-    theorems = []
+            assert verdict([Not(theorem)]) != unsat, (
+                f"{theorem} верно и без аксиом группы"
+            )
+            assert verdict([*axioms, Not(theorem)]) == unsat, (
+                f"{theorem} не выведено из аксиом"
+            )
+
+    Group = DeclareSort("Group")
+    mul = Function("mul", Group, Group, Group)
+    inv = Function("inv", Group, Group)
+    e = Const("e", Group)
+    x, y, z = Consts("x y z", Group)
+
+    axioms = [
+        ForAll([x, y, z], mul(mul(x, y), z) == mul(x, mul(y, z))),
+        ForAll([x], mul(e, x) == x),
+        ForAll([x], mul(x, e) == x),
+        ForAll([x], mul(inv(x), x) == e),
+        ForAll([x], mul(x, inv(x)) == e),
+    ]
+    theorems = [
+        ForAll([x, y], inv(mul(x, y)) == mul(inv(y), inv(x))),
+        ForAll([x, y], Implies(inv(x) == inv(y), x == y)),
+        ForAll([x], inv(inv(x)) == x),
+        inv(e) == e,
+    ]
     check(axioms, theorems)
 
 
